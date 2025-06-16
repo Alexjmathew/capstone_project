@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <meta name="csrf-token" content="<%= csrfToken %>" />
+    <title>Document</title>
+    <script>
+      const token = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
+      let chapterPages = <%- JSON.stringify(chapterPages) %>;
+      let currentPageIndex = 0;
+      let pageId = chapterPages[currentPageIndex].id;
+
+      function renderPage() {
+        console.log("rendering the page")
+        if (chapterPages.length > 0 && currentPageIndex < chapterPages.length) {
+          document.getElementById('pageName').innerText = chapterPages[currentPageIndex].pageName;
+          document.getElementById('pageContent').innerText = chapterPages[currentPageIndex].pageContent;
+          console.log("calling checkComplete")
+          checkComplete();
+          console.log("updating progress bar");
+          updateProgressBar();
+        }
+      }
+
+      function prevPage() {
+        if (currentPageIndex > 0) {
+          currentPageIndex--;
+          renderPage();
+        } else {
+          alert("You are on the first page.");
+        }
+        pageId = chapterPages[currentPageIndex].id;
+      }
+
+      function nextPage() {
+        if (currentPageIndex < chapterPages.length - 1) {
+          currentPageIndex++;
+          renderPage();
+        } else {
+          alert("You are on the last page.");
+        }
+        pageId = chapterPages[currentPageIndex].id;
+      }
+
+      function checkComplete() {
+        const pageId = chapterPages[currentPageIndex].id;
+        fetch("/checkComplete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            _csrf: token,
+            pageId: pageId,
+            userId: '<%= userId %>'
+          }),
+        })
+        .then((res) => res.json())
+        .then((data) => {
+          const markAsCompleted = document.getElementById("markAsCompleted");
+          markAsCompleted.innerText = data.completed ? "Completed" : "Incomplete";
+        })
+        .catch((err) => console.error(err));
+      }
+
+      function updateProgressBar() {
+        const progressBar = document.getElementById('progressBar');
+        let progress = 0;
+        fetch("/checkProgress",{
+          method:"POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            _csrf: token,
+            userId: '<%= userId %>',
+            courseId: '<%= courseId %>'
+          }),
+        }).then((res)=>res.json())
+        .then((data)=>{
+          if(data.progress){
+            progress = data.progress;
+            progressBar.style.width = progress + '%';
+            progressBar.innerText = progress + '%';
+          }
+        })
+        }
+
+      function markAsCompleted(userId,courseId) {
+        console.log("userid "+userId+" courseId "+courseId);
+        
+
+        fetch("/markAsCompleted", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            _csrf: token,
+            pageId: pageId,
+            userId: userId,
+            courseId:courseId
+          }),
+        })
+        .then((res) => {
+          if (res.status === 200) {
+            console.log("entering reload");
+
+            renderPage(); // Reload to fetch the updated status
+          }
+        })
+        .catch((err) => console.error(err));
+      }
+
+      function deletePage(){
+        fetch("/page",{
+          method:"DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            _csrf: token,
+            pageId: pageId,
+            userId: '<%=userId%>',
+            courseId:'<%=courseId%>'
+          }),
+        }
+        ).then((res) => {
+          if (res.ok) {
+            location.reload(); // Reload the whole page
+          }
+        }).catch((err) => console.error(err));
+
+
+      }
+      function savePage(){
+        const pageContent = document.getElementById('pageContent').value;
+        const saveButton = document.createElement("button");
+        saveButton.innerText = "Save";
+        saveButton.classList.add("bg-blue-500","text-white","font-bold","py-2","px-4","rounded","hover:bg-blue-600","transition","duration-200");
+        saveButton.onclick = function(){
+          fetch("/page",{
+            method:"put",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              _csrf: token,
+              pageId: pageId,
+              pageContent: pageContent
+            }),
+          }
+          ).then((res) => {
+            if (res.ok) {
+              location.reload(); // Reload the whole page
+            }
+          }).catch((err) => console.error(err));
+        }
+        document.querySelector(".controls").appendChild(saveButton);
+        
+      }
+
+      window.onload = function() {
+        renderPage();
+      };
+    </script>
+  </head>
+
+  <body class="bg-gray-100 text-gray-900">
+    <%- include('header') %>
+    <% if (chapterPages.length === 0) { %>
+      <h1 class="text-center text-2xl font-bold mt-8">No pages available. Create one!</h1>
+    <% } else { %>
+      <div class="container mx-auto p-4 bg-white shadow-md rounded-lg mt-8">
+      <div class="w-full bg-gray-200 rounded-full h-4 mb-4">
+        <div id="progressBar" class="bg-blue-500 h-4 rounded-full" style="width: 0%;"></div>
+      </div>
+      </div>
+      <div class="container mx-auto p-4 bg-white shadow-md rounded-lg mt-8">
+        <h2 id="pageName" class="text-2xl font-semibold mb-4 text-center"></h2>
+        <textarea id="pageContent" onchange="savePage()" class="w-full h-67 text-lg mb-6 text-center"></textarea>
+        <div class="flex justify-between controls">
+          <button onClick="prevPage()" class="bg-blue-500 text-white font-bold py-2 px-4 rounded hover:bg-blue-600 transition duration-200">
+            Prev Page
+          </button>
+
+          <%if(userRole==='educator'){%>
+          <button onClick="deletePage()" class="bg-blue-500 text-white font-bold py-2 px-4 rounded hover:bg-blue-600 transition duration-200">
+            Delete Page
+          </button>
+         <%}%>
+          
+          <button
+            id="markAsCompleted"
+            onClick="markAsCompleted('<%= userId %>','<%= courseId %>')"
+            class="bg-green-500 text-white font-bold py-2 px-4 rounded hover:bg-green-600 transition duration-200"
+          >
+            Mark as Completed
+          </button>
+          <button onClick="nextPage()" class="bg-blue-500 text-white font-bold py-2 px-4 rounded hover:bg-blue-600 transition duration-200">
+            Next Page
+          </button>
+        </div>
+      </div>
+    <% } %>
+    <% if (userRole === 'educator' && userCreatedCourseIds.includes(parseInt(courseId))) { %>
+      <div class="container mx-auto p-4 bg-white shadow-md rounded-lg mt-8">
+        <form action="/create-page" method="get" class="mt-4">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="hidden" name="chapterId" value="<%= chapterId %>" />
+          <input type="hidden" name="courseId" value="<%= courseId %>" />
+          <input
+            type="submit"
+            value="Create Page"
+            class="bg-green-500 text-white font-bold py-2 px-4 rounded hover:bg-green-600 transition duration-200 text-sm"
+          />
+        </form>
+      </div>
+    <% } %>
+    <%- include('./footer') %>
+  </body>
+</html>
